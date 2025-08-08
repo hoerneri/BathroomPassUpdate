@@ -1,0 +1,277 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Sign-Out/Sign-In Form</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        .form-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .form-section {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"], input[type="file"], input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        .clear-button {
+            background-color: #dc3545;
+        }
+        .clear-button:hover {
+            background-color: #c82333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .export-import {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Student Sign-Out/Sign-In Form</h1>
+    <div class="export-import">
+        <button onclick="downloadCSV()">Download Logs as CSV</button>
+        <label for="upload-csv">Upload CSV:</label>
+        <input type="file" id="upload-csv" accept=".csv">
+        <button onclick="uploadCSV()">Upload</button>
+        <button class="clear-button" onclick="promptClearLogs()">Clear Logs</button>
+    </div>
+    <div class="form-container">
+        <div class="form-section">
+            <h2>Sign Out</h2>
+            <label for="signout-name">Student Name:</label>
+            <input type="text" id="signout-name" placeholder="Enter student name" onkeypress="if(event.keyCode === 13) signOut()">
+            <button onclick="signOut()">Sign Out</button>
+        </div>
+        <div class="form-section">
+            <h2>Sign In</h2>
+            <label for="signin-name">Student Name:</label>
+            <input type="text" id="signin-name" placeholder="Enter student name" onkeypress="if(event.keyCode === 13) signIn()">
+            <button onclick="signIn()">Sign In</button>
+        </div>
+    </div>
+    <table id="log-table">
+        <thead>
+            <tr>
+                <th>Student Name</th>
+                <th>Sign-Out Time</th>
+                <th>Sign-In Time</th>
+            </tr>
+        </thead>
+        <tbody id="log-body"></tbody>
+    </table>
+
+    <script>
+        let logs = JSON.parse(localStorage.getItem('studentLogs')) || [];
+        const CLEAR_PASSWORD = '1566';
+
+        function getCurrentTime() {
+            const now = new Date();
+            return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function signOut() {
+            const name = document.getElementById('signout-name').value.trim();
+            if (!name) {
+                alert('Please enter a student name.');
+                return;
+            }
+            const existingLog = logs.find(log => log.name === name && !log.signInTime);
+            if (existingLog) {
+                alert('This student is already signed out.');
+                return;
+            }
+            logs.push({ name, signOutTime: getCurrentTime(), signInTime: '' });
+            localStorage.setItem('studentLogs', JSON.stringify(logs));
+            document.getElementById('signout-name').value = '';
+            updateTable();
+        }
+
+        function signIn() {
+            const name = document.getElementById('signin-name').value.trim();
+            if (!name) {
+                alert('Please enter a student name.');
+                return;
+            }
+            const log = logs.find(log => log.name === name && !log.signInTime);
+            if (!log) {
+                alert('This student has not signed out.');
+                return;
+            }
+            log.signInTime = getCurrentTime();
+            localStorage.setItem('studentLogs', JSON.stringify(logs));
+            document.getElementById('signin-name').value = '';
+            updateTable();
+        }
+
+        function updateTable() {
+            const tbody = document.getElementById('log-body');
+            tbody.innerHTML = '';
+            logs.forEach(log => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${log.name}</td>
+                    <td>${log.signOutTime}</td>
+                    <td>${log.signInTime || 'Not returned'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function downloadCSV() {
+            if (logs.length === 0) {
+                alert('No logs to download.');
+                return;
+            }
+            let csvContent = 'Student Name,Sign-Out Time,Sign-In Time\n';
+            logs.forEach(log => {
+                const row = `"${log.name.replace(/"/g, '""')}","${log.signOutTime}","${log.signInTime || 'Not returned'}"`;
+                csvContent += row + '\n';
+            });
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'student_logs.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function uploadCSV() {
+            const fileInput = document.getElementById('upload-csv');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a CSV file to upload.');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                try {
+                    const rows = text.split('\n').slice(1).filter(row => row.trim());
+                    const newLogs = [];
+                    for (const row of rows) {
+                        const [name, signOutTime, signInTime] = row.split(',').map(item => item.replace(/^"|"$/g, '').replace(/""/g, '"'));
+                        if (name && signOutTime) {
+                            newLogs.push({ name, signOutTime, signInTime: signInTime === 'Not returned' ? '' : signInTime });
+                        }
+                    }
+                    logs = newLogs;
+                    localStorage.setItem('studentLogs', JSON.stringify(logs));
+                    updateTable();
+                    fileInput.value = '';
+                } catch (error) {
+                    alert('Error parsing CSV file. Please ensure it has the correct format.');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function promptClearLogs() {
+            const password = prompt('Enter password to clear logs:');
+            if (password === CLEAR_PASSWORD) {
+                if (confirm('Are you sure you want to clear all logs?')) {
+                    logs = [];
+                    localStorage.removeItem('studentLogs');
+                    updateTable();
+                    alert('Logs cleared successfully.');
+                }
+            } else {
+                alert('Incorrect password.');
+            }
+        }
+
+        // Auto-save to localStorage every 10 seconds
+        setInterval(() => {
+            localStorage.setItem('studentLogs', JSON.stringify(logs));
+        }, 10000);
+
+        // Load logs on page load
+        updateTable();
+    </script>
+</body>
+</html>
